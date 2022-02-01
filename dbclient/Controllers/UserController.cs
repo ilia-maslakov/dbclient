@@ -1,15 +1,11 @@
-﻿using dbclient.data.EF;
-using dbclient.Validators;
+﻿using AutoMapper;
+using dbclient.data.EF;
+using dbclient.data.EF.Validators;
+using MassTransit;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Stkpnt.Contracts;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
-using dbclient.Connections;
-using System.Text;
 
 namespace dbclient.Controllers
 {
@@ -20,14 +16,18 @@ namespace dbclient.Controllers
     {
         private readonly ILogger<UserController> _logger;
         private readonly UserValidator _validator;
+        private readonly IPublishEndpoint _publishEndPoint;
+        private readonly IMapper _mapper;
 
-        public UserController(ILogger<UserController> logger)
+        public UserController(ILogger<UserController> logger, IPublishEndpoint publishEndPoint, IMapper mapper)
         {
             _logger = logger;
+            _publishEndPoint = publishEndPoint;
+            _mapper = mapper;
             _validator = new UserValidator();
         }
 
-        private bool isValidData(User user)
+        private bool IsValidData(User user)
         {
             var result = _validator.Validate(user);
             if (result.IsValid)
@@ -42,22 +42,34 @@ namespace dbclient.Controllers
             return false;
         }
 
-        [HttpPost("Add/{name},{surname},{patronymic}")]
-        public ActionResult Add(string name, string surname, string patronymic)
+        internal class Message
         {
-            _logger.LogInformation($"{DateTime.UtcNow.ToLongTimeString()} Add({name})");
+            public string Text { get; set; }
+        }
 
-            var u = new User { Name = name, Surname = surname, Patronymic = patronymic };
-            if (isValidData(u))
+        [HttpPost("Add/{name},{surname},{patronymic},{email}")]
+        public ActionResult Add(string name, string surname, string patronymic, string email)
+        {
+            var u = new User { Name = name, Surname = surname, Patronymic = patronymic, Guid = Guid.NewGuid(), Email = email };
+            _logger.LogInformation($"{DateTime.UtcNow.ToLongTimeString()} Add ({u})");
+            if (IsValidData(u))
             {
-                var factory = new ConnectionFactory() { HostName = "localhost" };
-                using (var connection = factory.CreateConnection())
-                using (var channel = connection.CreateModel())
+
+                var configuration = new MapperConfiguration(cfg =>
+                    cfg.CreateMap<User, ApplicationUserAdd>()
+                    .ForMember(to => to.Id, conf => conf.MapFrom(ol => ol.Guid)));
+                
+                //_publishEndPoint.Publish(u);
+                
+                _publishEndPoint.Publish(new ApplicationUserAdd
                 {
-                    channel.QueueDeclare(queue: "rabbit_queue", durable: false, exclusive: false, autoDelete: false, arguments: null);
-                    var body = Encoding.UTF8.GetBytes($"Add user;{u.Name};{u.Surname};{u.Patronymic}");
-                    channel.BasicPublish(exchange: "", routingKey: "rabbit_queue", basicProperties: null, body: body);
-                }
+                    Id = u.Guid,
+                    Name = u.Name,
+                    Surname = u.Surname,
+                    Patronymic = u.Patronymic,
+                    Email = u.Email
+                });
+                
             }
             else
             {

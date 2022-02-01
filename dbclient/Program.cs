@@ -1,12 +1,7 @@
-using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace dbclient
 {
@@ -14,10 +9,12 @@ namespace dbclient
     {
         public static void Main(string[] args)
         {
-            CreateHostBuilder(args).Build().Run();
+            var webHost = CreateHostBuilder(args).Build();
+            Console.Title = $"client db";
+            webHost.Run();
         }
 
-        public static IWebHostBuilder CreateHostBuilder(string[] args) => WebHost.CreateDefaultBuilder(args).UseStartup<Startup>();
-
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args).ConfigureWebHostDefaults(_ => { _.UseStartup<Startup>(); });
     }
 }
